@@ -44,10 +44,29 @@
         <header class="bg-white dark:bg-gray-800 shadow-sm">
             <div class="container mx-auto px-4 py-4 flex justify-between items-center">
                 <h1 class="text-2xl font-bold text-gray-800 dark:text-white">3D Print Cost Pro</h1>
-                <button id="themeToggle" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
-                    <i class="fas fa-moon dark:hidden"></i>
-                    <i class="fas fa-sun hidden dark:block"></i>
-                </button>
+                <div class="flex items-center space-x-4">
+                    @auth
+                        <a href="{{ route('calculator.history') }}" 
+                           class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                            <i class="fas fa-history mr-1"></i> History
+                        </a>
+                    @else
+                        <a href="{{ route('login') }}" 
+                           class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                            <i class="fas fa-sign-in-alt mr-1"></i> Login
+                        </a>
+                        @if (Route::has('register'))
+                            <a href="{{ route('register') }}" 
+                               class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">
+                                Sign Up
+                            </a>
+                        @endif
+                    @endauth
+                    <button id="themeToggle" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                        <i class="fas fa-moon dark:hidden"></i>
+                        <i class="fas fa-sun hidden dark:block"></i>
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -188,6 +207,33 @@
                                     <i class="fas fa-redo"></i>
                                     <span>Reset</span>
                                 </button>
+                                <button type="button" id="saveCalculationBtn"
+                                        class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        disabled>
+                                    <i class="fas fa-save"></i>
+                                    <span>Save</span>
+                                </button>
+                            </div>
+                            
+                            <!-- Notes Field (hidden by default) -->
+                            <div id="notesContainer" class="hidden">
+                                <label for="calculation_notes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Notes (optional)
+                                </label>
+                                <textarea id="calculation_notes" 
+                                          class="w-full p-3 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                          rows="2"
+                                          placeholder="Add any notes about this calculation..."></textarea>
+                                <div class="flex justify-end mt-2 space-x-2">
+                                    <button type="button" id="cancelSaveBtn"
+                                            class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                                        Cancel
+                                    </button>
+                                    <button type="button" id="confirmSaveBtn"
+                                            class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors">
+                                        <i class="fas fa-check mr-1"></i> Save Calculation
+                                    </button>
+                                </div>
                             </div>
                         </form>
 
@@ -299,6 +345,7 @@
         </div>
     </div>
 
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
         // Theme Toggle
@@ -394,19 +441,139 @@
                 $('#results').addClass('hidden');
             });
 
-            // Save calculation
-            $('#saveCalculation').on('click', function() {
-                // You can implement save functionality here
+            // Toggle save form visibility
+            let isSaving = false;
+            
+            $('#saveCalculationBtn').on('click', function() {
+                if (!isSaving) {
+                    // Show notes field
+                    $('#notesContainer').removeClass('hidden').addClass('animate__animated animate__fadeIn');
+                    $('#calculation_notes').focus();
+                    isSaving = true;
+                    $(this).addClass('bg-yellow-500 hover:bg-yellow-600').removeClass('bg-green-600 hover:bg-green-700');
+                }
+            });
+            
+            // Cancel save
+            $('#cancelSaveBtn').on('click', function() {
+                $('#notesContainer').addClass('hidden');
+                isSaving = false;
+                $('#saveCalculationBtn')
+                    .removeClass('bg-yellow-500 hover:bg-yellow-600')
+                    .addClass('bg-green-600 hover:bg-green-700');
+            });
+            
+            // Confirm save
+            $('#confirmSaveBtn').on('click', function() {
                 const btn = $(this);
+                const saveBtn = $('#saveCalculationBtn');
                 const originalText = btn.html();
                 
-                btn.html('<i class="fas fa-check"></i> Saved!').prop('disabled', true);
+                // Get all form data
+                const formData = {
+                    material_id: $('#material_id').val(),
+                    weight: $('#weight').val(),
+                    print_time: $('#print_time').val(),
+                    electricity_cost: $('#electricity_cost').val(),
+                    labor_cost: $('#labor_cost').val(),
+                    profit_margin: $('#profit_margin').val(),
+                    material_cost: parseFloat($('#material_cost').text().replace(/[^0-9.-]+/g,"")),
+                    electricity_cost_total: parseFloat($('#electricity_cost_result').text().replace(/[^0-9.-]+/g,"")),
+                    total_cost: parseFloat($('#total_cost').text().replace(/[^0-9.-]+/g,"")),
+                    final_price: parseFloat($('#final_price').text().replace(/[^0-9.-]+/g,"")),
+                    notes: $('#calculation_notes').val()
+                };
                 
-                // Reset button after 2 seconds
-                setTimeout(function() {
-                    btn.html(originalText).prop('disabled', false);
-                }, 2000);
+                // Validate required fields
+                if (!formData.material_id || !formData.weight || !formData.print_time) {
+                    alert('Please fill in all required fields and calculate before saving.');
+                    return;
+                }
+                
+                // Show loading state
+                btn.html('<i class="fas fa-spinner fa-spin"></i> Saving...').prop('disabled', true);
+                
+                // Send AJAX request to save calculation
+                $.ajax({
+                    url: '{{ route("calculator.save") }}',
+                    type: 'POST',
+                    data: formData,
+                    headers: {
+                        'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                    },
+                    success: function(response) {
+                        // Show success message
+                        btn.html('<i class="fas fa-check"></i> Saved!');
+                        
+                        // Hide the notes container after a delay
+                        setTimeout(function() {
+                            $('#notesContainer').addClass('hidden');
+                            btn.html(originalText).prop('disabled', false);
+                            saveBtn
+                                .removeClass('bg-yellow-500 hover:bg-yellow-600')
+                                .addClass('bg-green-600 hover:bg-green-700')
+                                .html('<i class="fas fa-save"></i> Save')
+                                .prop('disabled', true);
+                            
+                            // Reset notes
+                            $('#calculation_notes').val('');
+                            isSaving = false;
+                            
+                            // Show a toast notification
+                            showNotification('Calculation saved successfully!', 'success');
+                        }, 1000);
+                    },
+                    error: function(xhr) {
+                        console.error('Error saving calculation:', xhr);
+                        let errorMessage = 'Failed to save calculation. Please try again.';
+                        
+                        if (xhr.status === 401) {
+                            errorMessage = 'Please log in to save calculations.';
+                            window.location.href = '{{ route("login") }}';
+                        } else if (xhr.responseJSON && xhr.responseJSON.message) {
+                            errorMessage = xhr.responseJSON.message;
+                        }
+                        
+                        alert(errorMessage);
+                        btn.html(originalText).prop('disabled', false);
+                    }
+                });
             });
+            
+            // Toggle save button based on form validity
+            function updateSaveButtonState() {
+                const hasMaterial = $('#material_id').val() !== '';
+                const hasWeight = $('#weight').val() !== '';
+                const hasPrintTime = $('#print_time').val() !== '';
+                const hasResults = !$('#results').hasClass('hidden');
+                
+                $('#saveCalculationBtn').prop('disabled', !(hasMaterial && hasWeight && hasPrintTime && hasResults));
+            }
+            
+            // Call this when form changes or after calculation
+            $('input, select').on('change input', updateSaveButtonState);
+            
+            // Also update after calculation is done
+            $(document).ajaxComplete(function() {
+                updateSaveButtonState();
+            });
+            
+            // Show notification function
+            function showNotification(message, type = 'info') {
+                const notification = $(`
+                    <div class="fixed bottom-4 right-4 p-4 rounded-lg shadow-lg text-white animate__animated animate__fadeInRight ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}">
+                        ${message}
+                    </div>
+                `);
+                
+                $('body').append(notification);
+                
+                // Remove notification after 3 seconds
+                setTimeout(function() {
+                    notification.addClass('animate__fadeOutRight');
+                    setTimeout(() => notification.remove(), 300);
+                }, 3000);
+            }
 
             // Add tooltips
             $('.tooltip').each(function() {
